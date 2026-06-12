@@ -9,10 +9,20 @@ struct MainReaderView: View {
         NavigationStack {
             Group {
                 if let document = viewModel.document {
-                    PDFReaderView(document: document, zoomLevel: 1.0)
-                        .ignoresSafeArea(edges: .bottom)
+                    if viewModel.isPreparingText {
+                        ProgressView("Preparing text...")
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if viewModel.readerMode == .pdf {
+                        PDFReaderView(document: document, zoomLevel: 1.0)
+                            .ignoresSafeArea(edges: .bottom)
+                    } else {
+                        PDFTextReaderView(
+                            text: viewModel.extractedText,
+                            textSize: viewModel.textSize
+                        )
+                    }
                 } else {
-                    EmptyReaderView()
+                    EmptyReaderView(isLoading: viewModel.isLoading)
                 }
             }
             .navigationTitle("PDF Reader")
@@ -25,11 +35,35 @@ struct MainReaderView: View {
                     }
                 }
 
+                ToolbarItem(placement: .principal) {
+                    if viewModel.document != nil {
+                        ReaderModePickerView(
+                            selection: viewModel.readerMode,
+                            onSelect: { mode in
+                                Task {
+                                    await viewModel.selectMode(mode)
+                                }
+                            }
+                        )
+                    }
+                }
+
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        isShowingDocumentPicker = true
-                    } label: {
-                        Label(viewModel.document == nil ? "Open PDF" : "Change PDF", systemImage: "folder")
+                    HStack(spacing: 12) {
+                        if viewModel.document != nil && viewModel.readerMode == .text {
+                            TextSizeControlsView(
+                                textSize: viewModel.textSize,
+                                onDecrease: viewModel.makeTextSmaller,
+                                onReset: viewModel.resetTextSize,
+                                onIncrease: viewModel.makeTextLarger
+                            )
+                        }
+
+                        Button {
+                            isShowingDocumentPicker = true
+                        } label: {
+                            Label(viewModel.document == nil ? "Open PDF" : "Change PDF", systemImage: "folder")
+                        }
                     }
                 }
             }

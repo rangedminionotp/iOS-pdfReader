@@ -1,31 +1,65 @@
 import Foundation
 import PDFKit
 
+struct LoadedPDF {
+    let document: PDFDocument
+    let data: Data
+}
+
 protocol PDFDocumentImporting {
-    func loadDocument(from sourceURL: URL) throws -> PDFDocument
+    func loadDocument(from sourceURL: URL) async throws -> LoadedPDF
 }
 
 struct PDFDocumentImporter: PDFDocumentImporting {
-    func loadDocument(from sourceURL: URL) throws -> PDFDocument {
-        let shouldStopAccessing = sourceURL.startAccessingSecurityScopedResource()
-        defer {
-            if shouldStopAccessing {
-                sourceURL.stopAccessingSecurityScopedResource()
+    func loadDocument(from sourceURL: URL) async throws -> LoadedPDF {
+        let task = Task.detached(priority: .userInitiated) {
+            let shouldStopAccessing = sourceURL.startAccessingSecurityScopedResource()
+            defer {
+                if shouldStopAccessing {
+                    sourceURL.stopAccessingSecurityScopedResource()
+                }
             }
+
+            let importedURL = try Self.importDocument(from: sourceURL)
+
+            guard let documentData = try? Data(contentsOf: importedURL, options: .mappedIfSafe),
+                  let document = PDFDocument(data: documentData),
+                  document.pageCount > 0 else {
+                throw PDFImportError.invalidPDF
+            }
+
+            return LoadedPDF(document: document, data: documentData)
         }
 
-        let importedURL = try importDocument(from: sourceURL)
-
-        guard let documentData = try? Data(contentsOf: importedURL),
-              let document = PDFDocument(data: documentData),
-              document.pageCount > 0 else {
-            throw PDFImportError.invalidPDF
-        }
-
-        return document
+        return try await task.value
     }
 
-    private func importDocument(from sourceURL: URL) throws -> URL {
+    static func extractText(from documentData: Data) async -> String {
+        await Task.detached(priority: .utility) {
+            guard let document = PDFDocument(data: documentData) else {
+                return ""
+            }
+
+            let pageTexts = (0..<document.pageCount).compactMap { index -> String? in
+                guard let page = document.page(at: index) else {
+                    return nil
+                }
+
+                let pageText = page.string?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+                guard !pageText.isEmpty else {
+                    return nil
+                }
+
+                return "Page \(index + 1)\n\(pageText)"
+            }
+
+            return pageTexts.joined(separator: "\n\n")
+        }.value
+    }
+
+    private static func importDocument(from sourceURL: URL) throws -> URL {
         let fileManager = FileManager.default
         let documentsDirectory = try fileManager.url(
             for: .applicationSupportDirectory,
@@ -41,7 +75,7 @@ struct PDFDocumentImporter: PDFDocumentImporting {
         let destinationURL = importDirectory.appendingPathComponent("\(UUID().uuidString)-\(sanitizedName)")
 
         do {
-            let documentData = try Data(contentsOf: sourceURL)
+            let documentData = try Data(contentsOf: sourceURL, options: .mappedIfSafe)
             try documentData.write(to: destinationURL, options: .atomic)
             return destinationURL
         } catch {

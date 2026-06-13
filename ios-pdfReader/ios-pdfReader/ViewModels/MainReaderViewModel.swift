@@ -16,8 +16,12 @@ final class MainReaderViewModel: ObservableObject {
     @Published var readerMode: ReaderMode = .pdf
     @Published var textSize: CGFloat = 20
     @Published private(set) var extractedText = ""
+    @Published private(set) var textPages: [PDFTextPage] = []
     @Published private(set) var isLoading = false
     @Published private(set) var isPreparingText = false
+    @Published private(set) var pageCount = 0
+    @Published var currentPage = 1
+    @Published var targetPage: Int?
 
     private let documentImporter: PDFDocumentImporting
     private var documentData: Data?
@@ -33,8 +37,12 @@ final class MainReaderViewModel: ObservableObject {
             document = loadedPDF.document
             documentData = loadedPDF.data
             extractedText = ""
+            textPages = []
             readerMode = .pdf
             textSize = 20
+            pageCount = loadedPDF.document.pageCount
+            currentPage = 1
+            targetPage = 1
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
@@ -46,9 +54,13 @@ final class MainReaderViewModel: ObservableObject {
         document = nil
         documentData = nil
         extractedText = ""
+        textPages = []
         readerMode = .pdf
         textSize = 20
         isPreparingText = false
+        pageCount = 0
+        currentPage = 1
+        targetPage = nil
     }
 
     func clearError() {
@@ -71,6 +83,23 @@ final class MainReaderViewModel: ObservableObject {
         textSize = 20
     }
 
+    func jumpToPage(_ page: Int) {
+        guard page >= 1, page <= pageCount else {
+            return
+        }
+
+        currentPage = page
+        targetPage = page
+    }
+
+    func updateCurrentPage(_ page: Int) {
+        guard page >= 1, page <= pageCount else {
+            return
+        }
+
+        currentPage = page
+    }
+
     func selectMode(_ mode: ReaderMode) async {
         guard mode != .pdf else {
             readerMode = .pdf
@@ -81,14 +110,17 @@ final class MainReaderViewModel: ObservableObject {
             return
         }
 
-        if !extractedText.isEmpty {
+        if !textPages.isEmpty {
             readerMode = .text
             return
         }
 
         isPreparingText = true
-        let extracted = await PDFDocumentImporter.extractText(from: documentData)
-        extractedText = extracted
+        let extractedPages = await PDFDocumentImporter.extractTextPages(from: documentData)
+        extractedText = extractedPages
+            .map { "Page \($0.pageNumber)\n\($0.text)" }
+            .joined(separator: "\n\n")
+        textPages = extractedPages
         readerMode = .text
         isPreparingText = false
     }

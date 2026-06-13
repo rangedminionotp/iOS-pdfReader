@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct MainReaderView: View {
     @StateObject private var viewModel = MainReaderViewModel()
     @State private var isShowingDocumentPicker = false
+    @State private var isShowingPageIndex = false
 
     var body: some View {
         NavigationStack {
@@ -13,12 +14,19 @@ struct MainReaderView: View {
                         ProgressView("Preparing text...")
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if viewModel.readerMode == .pdf {
-                        PDFReaderView(document: document, zoomLevel: 1.0)
+                        PDFReaderView(
+                            document: document,
+                            zoomLevel: 1.0,
+                            currentPage: $viewModel.currentPage,
+                            targetPage: $viewModel.targetPage
+                        )
                             .ignoresSafeArea(edges: .bottom)
                     } else {
                         PDFTextReaderView(
-                            text: viewModel.extractedText,
-                            textSize: viewModel.textSize
+                            pages: viewModel.textPages,
+                            textSize: viewModel.textSize,
+                            currentPage: $viewModel.currentPage,
+                            targetPage: $viewModel.targetPage
                         )
                     }
                 } else {
@@ -50,6 +58,14 @@ struct MainReaderView: View {
 
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 12) {
+                        if viewModel.document != nil {
+                            Button {
+                                isShowingPageIndex = true
+                            } label: {
+                                Label("Pages", systemImage: "list.bullet.rectangle")
+                            }
+                        }
+
                         if viewModel.document != nil && viewModel.readerMode == .text {
                             TextSizeControlsView(
                                 textSize: viewModel.textSize,
@@ -73,6 +89,15 @@ struct MainReaderView: View {
                 }
             } message: {
                 Text(viewModel.errorMessage ?? "Please try another file.")
+            }
+            .sheet(isPresented: $isShowingPageIndex) {
+                PageIndexSheetView(
+                    pageCount: viewModel.pageCount,
+                    currentPage: viewModel.currentPage,
+                    onSelectPage: { page in
+                        viewModel.jumpToPage(page)
+                    }
+                )
             }
             .fileImporter(
                 isPresented: $isShowingDocumentPicker,

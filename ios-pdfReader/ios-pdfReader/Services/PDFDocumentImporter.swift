@@ -34,13 +34,18 @@ struct PDFDocumentImporter: PDFDocumentImporting {
         return try await task.value
     }
 
-    static func extractText(from documentData: Data) async -> String {
+    nonisolated static func extractText(from documentData: Data) async -> String {
+        let pages = await extractTextPages(from: documentData)
+        return pages.map { "Page \($0.pageNumber)\n\($0.text)" }.joined(separator: "\n\n")
+    }
+
+    nonisolated static func extractTextPages(from documentData: Data) async -> [PDFTextPage] {
         await Task.detached(priority: .utility) {
             guard let document = PDFDocument(data: documentData) else {
-                return ""
+                return [PDFTextPage]()
             }
 
-            let pageTexts = (0..<document.pageCount).compactMap { index -> String? in
+            return (0..<document.pageCount).compactMap { index -> PDFTextPage? in
                 guard let page = document.page(at: index) else {
                     return nil
                 }
@@ -52,14 +57,12 @@ struct PDFDocumentImporter: PDFDocumentImporting {
                     return nil
                 }
 
-                return "Page \(index + 1)\n\(pageText)"
+                return PDFTextPage(pageNumber: index + 1, text: pageText)
             }
-
-            return pageTexts.joined(separator: "\n\n")
         }.value
     }
 
-    private static func importDocument(from sourceURL: URL) throws -> URL {
+    nonisolated private static func importDocument(from sourceURL: URL) throws -> URL {
         let fileManager = FileManager.default
         let documentsDirectory = try fileManager.url(
             for: .applicationSupportDirectory,
